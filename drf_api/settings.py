@@ -22,7 +22,7 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # --- Hosts ---
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "api.twendedigital.tech"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "api.twendedigital.tech", "precarnival-lourdes-podsolic.ngrok-free.dev",   ]
 # ALLOWED_HOSTS = ['*']
 
 # --- Frontend ---
@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "achivements_app",
     "payments",
     "jobs",
+    'risala',
     "letterApp",
     "project_report",
     "cv_app",

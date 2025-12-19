@@ -32,9 +32,10 @@ urlpatterns = [
     path('api/', include('achivements_app.urls')),
     path("api/", include("jobs.urls")),
     path("api/", include("letterApp.urls")),
-    path('api/payments/', include('payments.urls')),
+    path('api/', include('payments.urls')),
     path('api/', include('project_report.urls')),
     path('api/', include('cv_app.urls')),
+    path("api/", include("risala.urls")),
     
     # Schema & docs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

@@ -13,9 +13,13 @@ from api.models import UserTB
 from cv_app.services.cv_tradition_generator.core import generate_cv as generate_cv_basic
 from cv_app.services.cv_intermideate_generator.cv_generator import generate_cv as generate_cv_intermediate
 from cv_app.services.cv_advanced_generator.cv_generator import generate_cv_safe as generate_cv_advanced
+from cv_app.services.cv_minimal_generator.minimalist_cv_generator import generate_minimalist_cv as generate_cv_minimalist
+from cv_app.services.cv_creative_generator.creative_cv_generator import generate_creative_cv as generate_cv_creative
+from cv_app.services.cv_modern_genrator.modern_cv_generator import generate_modern_sidebar_cv as generate_cv_modern
 import logging
 logger = logging.getLogger(__name__)  
 import io,os
+from payments.models import UserCredit
 from django.http import FileResponse
 OPENROUTER_URL = getattr(
     settings,
@@ -176,9 +180,18 @@ class UserCVDetailsView(APIView):
         }
 
     def get(self, request, cv_type="basic"):
-        """Return JSON or stream PDF CV."""
+        """Return JSON or stream PDF CV, only if user has downloads available."""
         try:
             user = request.user
+
+            # Check download credits
+            credit, _ = UserCredit.objects.get_or_create(user=user)
+            if credit.downloads_remaining <= 0:
+                return Response(
+                    {"detail": "You have no download credits. Please purchase more to download CVs."},
+                    status=status.HTTP_402_PAYMENT_REQUIRED
+                )
+
             user_data = self.get_user_cv_data(user)
 
             # --- JSON response ---
@@ -188,25 +201,45 @@ class UserCVDetailsView(APIView):
             # --- Generate PDF into temp file ---
             import tempfile
             temp_file = tempfile.NamedTemporaryFile(delete=True)
-            if cv_type.lower() == "basic":
-                generate_cv_basic(user_data, temp_file)
-            elif cv_type.lower() == "intermediate":
-                generate_cv_intermediate(user_data, output_path=temp_file)
-            elif cv_type.lower() == "advanced":
-                generate_cv_advanced(user_data, output_path=temp_file)
-            else:
-                return Response({"detail": "Invalid CV type."}, status=status.HTTP_400_BAD_REQUEST)
+            target_type = cv_type.lower()
 
+            # CV generation logic
+            if target_type == "basic":
+                generate_cv_basic(user_data, temp_file)
+            elif target_type == "intermediate":
+                generate_cv_intermediate(user_data, output_path=temp_file)
+            elif target_type == "advanced":
+                generate_cv_advanced(user_data, output_path=temp_file)
+            elif target_type == "modern":
+                generate_cv_modern(user_data, output_path=temp_file)
+            elif target_type == "minimalist":
+                generate_cv_minimalist(user_data, output_path=temp_file)
+            elif target_type == "creative":
+                generate_cv_creative(user_data, output_path=temp_file)
+            else:
+                return Response(
+                    {"detail": f"Invalid CV type '{cv_type}'. Options: basic, intermediate, advanced, modern, minimalist, creative."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Reset file pointer
             temp_file.seek(0)
+
+            # Deduct 1 download credit
+            credit.downloads_remaining -= 1
+            credit.save()
+
+            # Return the file
             return FileResponse(
                 temp_file,
                 as_attachment=True,
-                filename=f"{user.first_name}_{user.last_name}_CV.pdf",
+                filename=f"{user.first_name}_{user.last_name}_{cv_type.capitalize()}_CV.pdf",
+                content_type='application/pdf'
             )
 
         except Exception as e:
+            logger.exception(f"Error generating {cv_type} CV for user {user.id}")
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
 
 SECTION_FORMATS = {
     "personal_information": {

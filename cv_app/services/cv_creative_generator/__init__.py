@@ -1,0 +1,1 @@
+from .creative_cv_generator import generate_creative_cv
