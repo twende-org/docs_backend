@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            background-color: #E63946; /* Matching redMain */
+            color: #ffffff;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            letter-spacing: 1px;
+        }
+        .content {
+            padding: 30px;
+            line-height: 1.6;
+        }
+        .content h2 {
+            color: #1D3557;
+            margin-top: 0;
+        }
+        .button-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .button {
+            background-color: #E63946;
+            color: #ffffff !important;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            display: inline-block;
+            transition: background 0.3s ease;
+        }
+        .button:hover {
+            background-color: #D62839;
+        }
+        .footer {
+            background-color: #f9f9f9;
+            color: #777;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Welcome to GenDocs!</h1>
+        </div>
+        <div class="content">
+            <h2>Hi {{ user.first_name }},</h2>
+            <p>Thank you for joining GenDocs. We're excited to have you on board! To get started and secure your account, please verify your email address by clicking the button below:</p>
+            
+            <div class="button-container">
+                <a href="{{ verification_link }}" class="button">Verify My Account</a>
+            </div>
+            
+            <p>If the button doesn't work, copy and paste the following link into your browser:</p>
+            <p style="word-break: break-all; color: #E63946;">{{ verification_link }}</p>
+            
+            <p>If you didn't create an account with GenDocs, you can safely ignore this email.</p>
+            
+            <p>Best regards,<br>The GenDocs Team</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 GenDocs. All rights reserved.</p>
+            <p>Tanzania's Premium Document Platform</p>
+        </div>
+    </div>
+</body>
+</html>

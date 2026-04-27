@@ -1,50 +1,61 @@
 from pathlib import Path
-import dj_database_url
 import os
 import environ
-from dotenv import load_dotenv
 from datetime import timedelta
 from corsheaders.defaults import default_headers
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# --- Load .env ---
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+# --- Initialize Environment ---
 env = environ.Env(
-    DJANGO_DEBUG=(bool, False)
+    DJANGO_DEBUG=(bool, False),
+    DJANGO_ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
+    USE_S3=(bool, False)
 )
+# Read .env file
 environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 
 # --- Security ---
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="django-insecure-fallback")
-DEBUG = env.bool("DJANGO_DEBUG", default=False)
+SECRET_KEY = env("DJANGO_SECRET_KEY")
+DEBUG = env("DJANGO_DEBUG")
+ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
+
+# --- Sentry Monitoring ---
+SENTRY_DSN = env("SENTRY_DSN", default=None)
+if SENTRY_DSN and not DEBUG:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        traces_sample_rate=1.0,
+        send_default_pii=True
+    )
 
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-# --- Hosts ---
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "api.twendedigital.tech", "precarnival-lourdes-podsolic.ngrok-free.dev",   ]
-# ALLOWED_HOSTS = ['*']
 
 # --- Frontend ---
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:5173")
 
 # --- CORS & CSRF ---
-CORS_ALLOWED_ORIGINS = [
-    "https://docs.twendedigital.tech",
+CORS_ALLOWED_ORIGINS = env.list("DJANGO_CORS_ALLOWED_ORIGINS", default=[
     "http://localhost:5173",
-]
-CSRF_TRUSTED_ORIGINS = [
-    "https://docs.twendedigital.tech",
-    "http://localhost:5173"
-]
-
+    "http://127.0.0.1:5173",
+    "https://twendedocs.twendedigital.tech"
+])
+CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://twendedocs.twendedigital.tech"
+])
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = list(default_headers)
 
 # --- Installed Apps ---
 INSTALLED_APPS = [
-    "corsheaders",  # Must be before Django apps
+    "corsheaders",
     "grappelli",
     "grappelli.dashboard",
     "django.contrib.admin",
@@ -58,7 +69,6 @@ INSTALLED_APPS = [
     "django_extensions",
     # Local apps
     "api",
-    "smsparser",
     "personal_details",
     "work_experiences",
     "career_objective",
@@ -71,11 +81,12 @@ INSTALLED_APPS = [
     "achivements_app",
     "payments",
     "jobs",
-    'risala',
+    "risala",
     "letterApp",
     "project_report",
     "cv_app",
-
+    "documents",
+    "storages",
     # Third-party
     "rest_framework",
     "rest_framework_simplejwt",
@@ -85,7 +96,7 @@ INSTALLED_APPS = [
 
 # --- Middleware ---
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",  # must be first
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -102,17 +113,9 @@ WSGI_APPLICATION = "drf_api.wsgi.application"
 AUTH_USER_MODEL = "api.UserTB"
 
 # --- Database ---
-if env("DATABASE_URL", default=None):
-    DATABASES = {
-        "default": dj_database_url.parse(env("DATABASE_URL"))
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+DATABASES = {
+    "default": env.db_url("DATABASE_URL", default=f"sqlite:///{BASE_DIR}/db.sqlite3")
+}
 
 # --- Email ---
 EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
@@ -121,15 +124,21 @@ EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER)
 
 # --- Stripe ---
 STRIPE_TEST_API_KEY = env("STRIPE_TEST_API_KEY", default="")
 STRIPE_TEST_SECRET_KEY = env("STRIPE_TEST_SECRET_KEY", default="")
 
-# --- OpenRouter ---
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-GOOGLE_CLIENT_ID = os.getenv("VITE_GOOGLE_CLIENT_ID")
+# --- AzamPay ---
+AZAMPAY_CLIENT_ID = env("AZAMPAY_CLIENT_ID", default="")
+AZAMPAY_CLIENT_SECRET = env("AZAMPAY_CLIENT_SECRET", default="")
+AZAMPAY_BASE_URL = env("AZAMPAY_BASE_URL", default="https://sandbox.azampay.co.tz")
+
+# --- AI & Other External ---
+OPENROUTER_API_KEY = env("OPENROUTER_API_KEY", default="")
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", default="330709384324-hrs7ac1ovucrd4rdbjad2ahor1d3hr6l.apps.googleusercontent.com")
+VITE_GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID
 
 # --- DRF / JWT ---
 REST_FRAMEWORK = {
@@ -140,13 +149,12 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
     ),
+    "EXCEPTION_HANDLER": "api.exceptions.global_exception_handler",
 }
-
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=3),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
-
     "ROTATE_REFRESH_TOKENS": False,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
@@ -178,11 +186,32 @@ TEMPLATES = [
     },
 ]
 
-# --- Static & media ---
+# --- Static & Media ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# --- Storage Configuration (Local vs S3) ---
+USE_S3 = env.bool("USE_S3", default=False)
+
+if USE_S3:
+    # AWS S3 Settings
+    AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY")
+    AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME")
+    AWS_S3_REGION_NAME = env("AWS_S3_REGION_NAME", default="us-east-1")
+    AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
+    AWS_S3_FILE_OVERWRITE = False
+    
+    # Static files settings
+    STATICFILES_STORAGE = "storages.backends.s3boto3.S3StaticStorage"
+    STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/static/"
+    
+    # Media files settings
+    DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+    MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
+else:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

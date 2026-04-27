@@ -23,10 +23,6 @@ if not User.objects.filter(email='admin@gmail.com').exists():
     )
 EOF
 
+# --- Start Gunicorn ---
 echo "🚀 Starting Gunicorn..."
-exec gunicorn drf_api.wsgi:application \
-    --bind 0.0.0.0:${PORT:-8000} \
-    --workers 4 \
-    --log-level info \
-    --access-logfile '-' \
-    --error-logfile '-'
+exec gunicorn -c gunicorn_config.py drf_api.wsgi:application

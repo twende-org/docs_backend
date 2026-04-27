@@ -1,6 +1,8 @@
 from django.contrib.sites.shortcuts import get_current_site
 from django.urls import reverse
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -13,6 +15,8 @@ from django.conf import settings
 from datetime import datetime, timedelta
 from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework import status, permissions
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from drf_spectacular.utils import extend_schema
 from django.http import JsonResponse
 from django.contrib.auth import get_user_model
@@ -74,30 +78,55 @@ class RegisterView(APIView):
 
         verification_url = f"{settings.FRONTEND_BASE_URL}/verify-email?token={token}"
 
-        # Email Content
-        email_subject = "Verify Your Email Address"
-        email_body = (
-            f"Hello {user.email},\n\n"
-            "Thank you for signing up! Please verify your email address to activate your account.\n\n"
-            f"Click the link below to confirm your email:\n{verification_url}\n\n"
-            "If you did not sign up, you can ignore this email.\n\n"
-            "Best regards,\nYour Company Team"
-        )
+        # Send Premium HTML Verification Email
+        subject = "Welcome to GenDocs - Please Verify Your Account"
+        context = {
+            'user': user,
+            'verification_link': verification_url,
+        }
+        
+        try:
+            html_content = render_to_string('api/emails/verification_email.html', context)
+            text_content = strip_tags(html_content)
+            
+            email = EmailMultiAlternatives(
+                subject,
+                text_content,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email]
+            )
+            email.attach_alternative(html_content, "text/html")
+            email.send()
+        except Exception as e:
+            logger.error(f"Failed to send verification email: {str(e)}")
 
-        send_mail(
-            email_subject,
-            email_body,
-            settings.DEFAULT_FROM_EMAIL,
-            [user.email],
-            fail_silently=False,
-        )
+        if settings.DEBUG:
+            user.is_active = True
+            user.save()
+            
+            # Also generate tokens for immediate login
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "message": f"Registration successful for {user.email}. User auto-activated (DEBUG=True).",
+                "verification_required": False,
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": UserTBSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
+
+        user.is_active = False 
+        user.save()
 
         return Response({
-            "message": "User registered successfully. Please check your email to verify your account."
+            "message": f"Registration successful for {user.email}. Please check your email inbox to verify your account.",
+            "verification_required": True
         }, status=status.HTTP_201_CREATED)
 
      return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+from rest_framework.permissions import AllowAny
+
 class VerifyEmailView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request):
         token = request.GET.get("token")
 
@@ -198,6 +227,8 @@ class UserProfileView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
 def run_create_superuser(request):
     User = get_user_model()
     email = "admin@gmail.com"
@@ -220,6 +251,8 @@ def run_create_superuser(request):
     
 
 
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
 @csrf_exempt
 def run_migrations(request):
     try:

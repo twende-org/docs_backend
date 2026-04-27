@@ -3,8 +3,13 @@ import json
 import requests
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .models import Transaction,UserCredit
+from .models import Transaction, UserCredit
+from .services import CreditService
 from django.contrib.auth import get_user_model
+import hmac
+import hashlib
+from django.db import transaction
+import stripe
 
 # ---------------------------------------------------
 # Azampay Configuration
@@ -162,30 +167,51 @@ def azampay_callback(request):
             tx.account_number = data.get("msisdn") or data.get("accountNumber") or tx.account_number
             tx.raw_callback = data
             tx.save()
+            
+            # Add credits if successful
+            if tx.status.upper() == "SUCCESS":
+                CreditService.add_credits(tx.user, tx.amount)
+                
             print(f"CALLBACK UPDATED: {tx.id}")
         else:
-            tx = Transaction.objects.create(
-                external_id=external_id or f"ext-{transaction_id}",
-                transaction_id=transaction_id or "",
-                status=data.get("transactionstatus") or data.get("status") or "success",
-                amount=data.get("amount") or 0,
-                provider=data.get("operator") or data.get("provider") or "",
-                account_number=data.get("msisdn") or data.get("accountNumber") or "",
-                raw_callback=data
-            )
-            print(f"CALLBACK CREATED: {tx.id}")
+            # Handle unknown transactions or logs
+            print(f"CALLBACK RECEIVED FOR UNKNOWN TX: {transaction_id}")
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"status": "received"})
 
 # ---------------------------------------------------
-# 4. WEBHOOK
+# 4. WEBHOOK (SECURE)
 # ---------------------------------------------------
+def verify_azampay_signature(payload, signature):
+    """
+    Verify Azampay HMAC signature.
+    Requires AZAMPAY_HMAC_SECRET in environment.
+    """
+    secret = os.getenv("AZAMPAY_HMAC_SECRET")
+    if not secret or not signature:
+        return False
+        
+    expected_sig = hmac.new(
+        secret.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(expected_sig, signature)
+
 @csrf_exempt
 def webhook_handler(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid method"}, status=405)
+        
+    # Signature Verification
+    sig = request.headers.get("X-Signature")
+    if not verify_azampay_signature(request.body, sig):
+        print(f"AZAMPAY SECURITY ALERT: Invalid signature from {request.META.get('REMOTE_ADDR')}")
+        return JsonResponse({"error": "Invalid signature"}, status=403)
+
     try:
         data = json.loads(request.body)
     except Exception:
@@ -202,23 +228,77 @@ def webhook_handler(request):
              or Transaction.objects.filter(external_id=external_id).first()
 
         if tx:
-            tx.status = data.get("status") or "success"
-            tx.amount = data.get("amount") or tx.amount
-            tx.provider = data.get("channel") or data.get("operator") or tx.provider
-            tx.raw_webhook = data
-            tx.save()
-            print(f"WEBHOOK UPDATED: {tx.id}")
+            # Secure: Only update if not already success
+            if tx.status.upper() != "SUCCESS":
+                new_status = (data.get("status") or "success").upper()
+                tx.status = new_status
+                tx.amount = data.get("amount") or tx.amount
+                tx.raw_webhook = data
+                tx.save()
+                
+                if new_status == "SUCCESS":
+                    CreditService.add_credits(tx.user, tx.amount)
+            
+            print(f"WEBHOOK UPDATED: {tx.id} - Status: {tx.status}")
         else:
-            tx = Transaction.objects.create(
-                external_id=external_id or f"ext-{transaction_id}",
-                transaction_id=transaction_id or "",
-                status=data.get("status") or "success",
-                amount=data.get("amount") or 0,
-                provider=data.get("channel") or data.get("operator") or "",
-                raw_webhook=data
-            )
-            print(f"WEBHOOK CREATED: {tx.id}")
+            print(f"WEBHOOK RECEIVED FOR UNKNOWN TX: {transaction_id}")
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"status": "success"})
+
+
+# ---------------------------------------------------
+# 5. STRIPE WEBHOOK (SECURE)
+# ---------------------------------------------------
+@csrf_exempt
+def stripe_webhook_handler(request):
+    payload = request.body
+    sig_header = request.headers.get("STRIPE_SIGNATURE")
+    endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+    if not endpoint_secret:
+        return JsonResponse({"error": "Stripe webhook secret not configured"}, status=500)
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, endpoint_secret
+        )
+    except ValueError:
+        return JsonResponse({"error": "Invalid payload"}, status=400)
+    except stripe.error.SignatureVerificationError:
+        print(f"STRIPE SECURITY ALERT: Invalid signature")
+        return JsonResponse({"error": "Invalid signature"}, status=403)
+
+    # Handle the event
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        client_reference_id = session.get("client_reference_id")
+        amount_total = session.get("amount_total", 0) / 100  # Stripe is in cents
+        
+        if client_reference_id:
+            try:
+                # Use a transaction lock to prevent duplicate credits
+                with transaction.atomic():
+                    user = get_user_model().objects.get(id=client_reference_id)
+                    
+                    # Check if this Stripe session ID has already been processed
+                    if not Transaction.objects.filter(external_id=session.get("id"), status="SUCCESS").exists():
+                        CreditService.add_credits(user, amount_total)
+                        
+                        Transaction.objects.create(
+                            user=user,
+                            external_id=session.get("id"),
+                            transaction_id=session.get("payment_intent", ""),
+                            amount=amount_total,
+                            status="SUCCESS",
+                            provider="STRIPE",
+                            raw_webhook=event
+                        )
+                    else:
+                        print(f"STRIPE WEBHOOK: Duplicate session {session.get('id')} ignored.")
+            except get_user_model().DoesNotExist:
+                print(f"STRIPE WEBHOOK: User {client_reference_id} not found.")
+                pass
 
     return JsonResponse({"status": "success"})

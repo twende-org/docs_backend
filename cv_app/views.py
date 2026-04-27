@@ -21,13 +21,7 @@ logger = logging.getLogger(__name__)
 import io,os
 from payments.models import UserCredit
 from django.http import FileResponse
-OPENROUTER_URL = getattr(
-    settings,
-    "OPENROUTER_URL",
-    "https://openrouter.ai/api/v1/chat/completions"
-)
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+from api.services.ai_service import make_ai_call, extract_json_from_text
 
 class UserCVDetailsView(APIView):
     permission_classes = [IsAuthenticated]
@@ -356,94 +350,40 @@ class CVAIView(APIView):
         Use this template for each item: {json.dumps(section_format['template'])}
         If any field is missing, set it to an empty string "".
 
-        Text:
-        \"\"\"{ai_input_text}\"\"\"
+        Text        \"\"\"{ai_input_text}\"\"\"
         """
-
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Referer": settings.FRONTEND_BASE_URL,
-            "X-Title": "Gendocs CV Generator",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0
-        }
-
-        logger.info("Sending request to OpenRouter: %s", payload)
-
         try:
-            response = requests.post(OPENROUTER_URL, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            logger.info("Received AI response: %s", data)
+            # Use centralized AI service with 'premium' tier for CV generation
+            response_text = make_ai_call(prompt, tier="premium")
+            if not response_text:
+                return Response({"error": "AI returned empty response"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            choice = data.get("choices", [{}])[0]
-            ai_text = (
-                choice.get("message", {}).get("content")
-                or choice.get("text")
-                or ""
-            ).strip()
-
-            if not ai_text:
-                logger.error("AI returned EMPTY content: %s", data)
-                return Response({"error": "AI returned empty response", "raw": data},
+            # Use centralized robust JSON extraction
+            ai_json = extract_json_from_text(response_text)
+            if not ai_json:
+                return Response({"error": "Failed to parse AI response as JSON", "raw": response_text},
                                 status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # Remove markdown fences
-            clean_text = ai_text.replace("```json", "").replace("```", "").strip()
-            logger.info("Cleaned AI JSON Text: %s", clean_text)
+            # Ensure array structure as per original logic
+            array_field = section_format['array_field']
+            template = section_format['template']
 
-            # Parse JSON
-            try:
-                ai_json = json.loads(clean_text)
+            if array_field not in ai_json or not isinstance(ai_json[array_field], list):
+                if isinstance(ai_json, dict):
+                    ai_json = {array_field: [ai_json]}
+                else:
+                    return Response({"error": "AI response format invalid"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                # Ensure array structure
-                array_field = section_format['array_field']
-                template = section_format['template']
-
-                if array_field not in ai_json or not isinstance(ai_json[array_field], list):
-                    # If AI returned a single object, wrap it in array
-                    if isinstance(ai_json, dict):
-                        ai_json = {array_field: [ai_json]}
-                    else:
-                        return Response(
-                            {"error": "AI response format invalid", "raw_ai_output": ai_text},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                        )
-
-                # Ensure each item has all keys from template
-                for item in ai_json[array_field]:
-                    if isinstance(template, dict):
-                        for k, v in template.items():
-                            if k not in item:
-                                item[k] = v
-                    elif isinstance(template, list) and template and isinstance(template[0], dict):
-                        # for nested arrays like responsibilities
-                        for k in template[0]:
-                            if k not in item:
-                                item[k] = [{k: ""}]
-
-            except json.JSONDecodeError:
-                logger.exception("Failed to parse AI JSON.")
-                return Response(
-                    {"error": "Failed to parse AI response as JSON",
-                     "raw_ai_output": ai_text,
-                     "cleaned_output": clean_text},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+            # Fill missing template keys
+            for item in ai_json[array_field]:
+                if isinstance(template, dict):
+                    for k, v in template.items():
+                        if k not in item:
+                            item[k] = v
 
             return Response(ai_json, status=status.HTTP_200_OK)
 
-        except requests.RequestException as e:
-            logger.exception("Request to OpenRouter failed.")
-            return Response({"error": "Request to OpenRouter failed", "detail": str(e)},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
         except Exception as e:
-            logger.exception("Unexpected error in CVAIView.")
-            return Response({"error": "Unexpected server error", "detail": str(e)},
+            logger.exception("AI generation failed.")
+            return Response({"error": "AI generation failed", "detail": str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)

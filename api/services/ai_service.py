@@ -1,236 +1,187 @@
 # api/services/ai_service.py
 import os
 import json
-import re
 import time
-from openai import OpenAI
-from dotenv import load_dotenv
-from typing import Dict, Any, Union, List
+import hashlib
+import re
+import requests
+from django.conf import settings
+from api.models import AIUsage, AICache
 
-load_dotenv()
-
-# Initialize OpenRouter client
-try:
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-    )
-    AI_AVAILABLE = True
-    print("OpenRouter initialized successfully")
-except Exception as e:
-    print(f"Error initializing OpenRouter: {str(e)}")
-    AI_AVAILABLE = False
-
-
-def extract_json_from_text(text: str) -> Union[Dict[str, Any], List[Dict[str, Any]], None]:
+class AIService:
     """
-    Extract one or more JSON objects from text that might contain extra content.
-    Returns:
-        - dict if one JSON object found
-        - list of dicts if multiple JSON objects found
-        - None if nothing could be parsed
+    Centralized AI Service Layer for GENDOCS.
+    Focuses on reliability, cost-optimization, and scalability.
     """
-    results = []
+    
+    # Model preferences in order of cascading fallback
+    MODELS = [
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "meta-llama/llama-3.3-70b-instruct",
+        "mistralai/mistral-7b-instruct",
+    ]
 
-    # Try direct parse
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+    @staticmethod
+    def _generate_hash(data):
+        """Create a stable hash for the input data to check cache."""
+        data_str = json.dumps(data, sort_keys=True)
+        return hashlib.md5(data_str.encode()).hexdigest()
 
-    # Find all {...} blocks
-    json_pattern = r'\{(?:[^{}]|(?R))*\}'
-    matches = re.findall(json_pattern, text, re.DOTALL)
-    for match in matches:
-        try:
-            results.append(json.loads(match))
-        except json.JSONDecodeError:
-            continue
+    @classmethod
+    def polish_document(cls, user, doc_type, data):
+        """
+        Public method to polish document content with:
+        - Usage tracking
+        - Intelligent Caching
+        - Multi-model cascading
+        - Resilient fallback
+        """
+        # 1. Check Usage Limits
+        if user:
+            usage = AIUsage.get_usage(user)
+            if usage.request_count >= 50: # Increased limit for premium feel
+                return {"success": False, "error": "Daily AI limit reached.", "data": data}
+        else:
+            # If no user, bypass limits or use a global limit (for internal/background tasks)
+            # For GENDOCS background enhancement, we allow it.
+            pass
 
-    # Markdown style ```json { ... } ```
-    json_code_block_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
-    code_matches = re.findall(json_code_block_pattern, text, re.DOTALL)
-    for match in code_matches:
-        try:
-            results.append(json.loads(match))
-        except json.JSONDecodeError:
-            continue
+        # 2. Check Cache (Cost Optimization)
+        data_hash = cls._generate_hash(data)
+        cached = AICache.get_cached(data_hash)
+        if cached:
+            return {"success": True, "data": cached.polished_content, "cached": True}
 
-    if not results:
+        # 3. Build Prompt
+        prompt = cls._build_prompt(doc_type, data)
+        api_key = os.getenv("OPENROUTER_API_KEY") or getattr(settings, 'OPENROUTER_API_KEY', None)
+
+        if not api_key:
+            return {"success": False, "error": "AI Config Missing", "data": data}
+
+        # 4. Multi-Model Cascading Execution
+        polished_result = None
+        for model in cls.MODELS:
+            polished_result = cls._call_openrouter(prompt, api_key, model)
+            if polished_result:
+                break 
+        
+        # 5. Process Result
+        if polished_result:
+            try:
+                cleaned_json = cls._extract_json(polished_result)
+                if cleaned_json:
+                    if user:
+                        # Increment usage
+                        usage.increment()
+                    # Store in cache
+                    AICache.objects.create(
+                        hash=data_hash,
+                        doc_type=doc_type,
+                        original_content=data,
+                        polished_content=cleaned_json
+                    )
+                    return {"success": True, "data": cleaned_json}
+            except Exception:
+                pass
+
+        # 6. Ultimate Failsafe: Return original content
+        return {"success": False, "error": "AI failed to process. Returning original.", "data": data}
+
+    @staticmethod
+    def _build_prompt(doc_type, data):
+        """High-impact prompt engineering for document polishing."""
+        return f"""
+        You are a senior professional document architect. Your task is to polish the following {doc_type} data for maximum impact.
+        
+        OBJECTIVES:
+        - Use professional, high-end business language.
+        - Enhance grammar, spelling, and structural flow.
+        - Maintain 100% of the original meaning and factual details.
+        
+        RESTRICTIONS:
+        - Respond ONLY with the polished JSON object.
+        - DO NOT include any conversational text, explanations, or quotes.
+        - Maintain the EXACT same JSON keys as the input.
+        
+        INPUT DATA ({doc_type}):
+        {json.dumps(data, indent=2)}
+        """
+
+    @staticmethod
+    def _call_openrouter(prompt, api_key, model, retries=2):
+        """Raw API call logic with retries and timeout handling."""
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://gendocs.co.tz",
+            "X-Title": "GENDOCS AI Engine",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a professional JSON document polisher. NO chatter, only JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2, # Low temperature for consistency
+            "max_tokens": 2000,
+            "response_format": { "type": "json_object" }
+        }
+
+        for attempt in range(retries):
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=25)
+                if response.status_code == 200:
+                    return response.json()['choices'][0]['message']['content']
+                elif response.status_code == 429: # Rate limit
+                    time.sleep(2 ** attempt)
+                else:
+                    return None
+            except Exception:
+                time.sleep(1)
         return None
-    return results[0] if len(results) == 1 else results
+
+    @staticmethod
+    def _extract_json(text):
+        """Fallback JSON extraction from markdown or direct response."""
+        try:
+            return json.loads(text.strip())
+        except:
+            match = re.search(r'(\{[\s\S]*\})', text)
+            if match:
+                try: return json.loads(match.group(1))
+                except: pass
+        return None
 
 
-def merge_dicts(original: Dict[str, Any], cleaned: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Dict[str, Any]:
-    """
-    Merge cleaned data with original to avoid losing keys.
-    If cleaned is a list, take the first element.
-    """
-    if isinstance(cleaned, list) and cleaned:
-        cleaned = cleaned[0]
+# --- LEGACY WRAPPERS & SERIALIZER HELPERS ---
+AI_AVAILABLE = True # Always True if we have the service logic
 
-    if not isinstance(cleaned, dict):
-        return original
-
+def merge_dicts(original: dict, cleaned: dict) -> dict:
+    """Safely merge two dictionaries."""
+    if not isinstance(cleaned, dict): return original
     merged = original.copy()
     merged.update(cleaned)
     return merged
 
+def make_ai_call(prompt: str, model: str = None) -> str:
+    api_key = os.getenv("OPENROUTER_API_KEY") or getattr(settings, 'OPENROUTER_API_KEY', None)
+    if not api_key: return "config_missing"
+    return AIService._call_openrouter(prompt, api_key, model or AIService.MODELS[0])
 
-def make_ai_call(prompt: str, max_retries=3, initial_delay=1) -> str:
-    """
-    Make an AI call with retry logic and rate limit handling.
-    """
-    for attempt in range(max_retries):
-        try:
-            response = client.chat.completions.create(
-                model="mistralai/mistral-7b-instruct:free",
-                messages=[
-                    {"role": "system", "content": "You are a professional CV writer. Always respond with concise, professional JSON or plain text only."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=800,
-                extra_headers={
-                    "HTTP-Referer": "http://localhost:8000",
-                    "X-Title": "Django CV App",
-                },
-            )
-            return response.choices[0].message.content.strip()
-        
-        except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "rate limit" in error_str.lower():
-                if attempt < max_retries - 1:
-                    delay = initial_delay * (2 ** attempt)
-                    print(f"Rate limit hit. Retrying in {delay} seconds...")
-                    time.sleep(delay)
-                    continue
-                else:
-                    print("Rate limit exceeded after retries. Skipping enhancement.")
-                    return None
-            else:
-                print(f"AI call failed: {error_str}")
-                return None
-    
-    return None
+def extract_json_from_text(text: str) -> dict:
+    return AIService._extract_json(text)
 
+def clean_user_data_with_ai(serializer_data: dict) -> dict:
+    """Wrapper using the new consolidated service."""
+    result = AIService.polish_document(None, "UserData", serializer_data)
+    if result.get('success'):
+        return result['data']
+    return serializer_data
 
-def clean_user_data_with_ai(serializer_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Send user data from serializer to AI for cleaning and structuring.
-    Ensures fallback to original keys if cleaned JSON misses fields.
-    """
-    if not AI_AVAILABLE:
-        print("AI service not available, returning original data")
-        return serializer_data
-    
-    prompt = f"""
-    You are a professional CV data formatter. Your task is to clean and structure the following user data 
-    into a consistent format suitable for building professional CVs. Please:
-
-    - Standardize all dates to ISO format (YYYY-MM-DD)
-    - Ensure consistent capitalization
-    - Remove irrelevant info or filler words
-    - Use professional language throughout
-    - Improve career objectives, summaries, responsibilities, and project descriptions
-    - IMPORTANT: Respond with **only valid JSON**, no text outside JSON.
-
-    User Data:
-    {json.dumps(serializer_data, indent=2)}
-    """
-    
-    try:
-        response_text = make_ai_call(prompt)
-        if not response_text:
-            print("AI call failed, returning original data")
-            return serializer_data
-        
-        cleaned_data = extract_json_from_text(response_text)
-        if cleaned_data:
-            return merge_dicts(serializer_data, cleaned_data)
-        else:
-            print(f"Could not parse AI response as JSON: {response_text}")
-            return serializer_data
-            
-    except Exception as e:
-        print(f"AI processing error: {str(e)}")
-        return serializer_data
-
-
-def enhance_cv_data(cv_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Enhance the CV data using AI for better professional presentation.
-    """
-    if not AI_AVAILABLE:
-        print("AI service not available, returning original data")
-        return cv_data
-    
-    # Profile summary
-    if cv_data.get('personal_details', {}).get('profile_summary'):
-        summary_prompt = f"""
-        Improve this professional summary, respond with only plain text:
-        "{cv_data['personal_details']['profile_summary']}"
-        """
-        enhanced_summary = make_ai_call(summary_prompt)
-        if enhanced_summary:
-            cv_data['personal_details']['profile_summary'] = enhanced_summary
-            time.sleep(2)
-
-    # Career objectives
-    for obj in cv_data.get('career_objectives', []):
-        if obj.get('career_objective'):
-            obj_prompt = f"""
-            Improve this career objective, respond with only plain text:
-            "{obj['career_objective']}"
-            """
-            enhanced_obj = make_ai_call(obj_prompt)
-            if enhanced_obj:
-                obj['career_objective'] = enhanced_obj
-                time.sleep(2)
-
-    # Responsibilities
-    responsibilities_to_enhance = []
-    for exp in cv_data.get('work_experiences', []):
-        for resp in exp.get('responsibilities', []):
-            if resp.get('value'):
-                responsibilities_to_enhance.append(resp)
-
-    if responsibilities_to_enhance:
-        resp_prompt = {
-            "task": "Improve job responsibilities to be professional and impactful",
-            "responsibilities": [r["value"] for r in responsibilities_to_enhance]
-        }
-        batch_response = make_ai_call(
-            f"Return only JSON array of improved responsibilities:\n{json.dumps(resp_prompt)}"
-        )
-        if batch_response:
-            improved_list = extract_json_from_text(batch_response)
-            if isinstance(improved_list, list):
-                for i, val in enumerate(improved_list):
-                    if i < len(responsibilities_to_enhance):
-                        responsibilities_to_enhance[i]['value'] = val
-            time.sleep(4)
-
-    # Projects
-    projects_to_enhance = []
-    for proj in cv_data.get('projects', []):
-        if proj.get('description'):
-            projects_to_enhance.append(proj)
-
-    if projects_to_enhance:
-        proj_prompt = {
-            "task": "Improve project descriptions to highlight achievements",
-            "projects": [{"title": p["title"], "description": p["description"]} for p in projects_to_enhance]
-        }
-        batch_response = make_ai_call(
-            f"Return only JSON array of improved projects with title and description:\n{json.dumps(proj_prompt)}"
-        )
-        if batch_response:
-            improved_projects = extract_json_from_text(batch_response)
-            if isinstance(improved_projects, list):
-                for proj, improved in zip(projects_to_enhance, improved_projects):
-                    proj['description'] = improved.get("description", proj['description'])
-            time.sleep(4)
-
-    return cv_data
+def enhance_cv_data(cv_data: dict) -> dict:
+    """Enhanced wrapper for CV data polishing."""
+    result = AIService.polish_document(None, "FullCV", cv_data)
+    return result.get('data', cv_data) if result.get('success') else cv_data

@@ -82,8 +82,8 @@ def generate_clean_letter(data: dict) -> dict:
     """
 
     try:
-        # Call AI with the API key
-        response_text = make_ai_call(prompt, api_key=api_key)
+        # Call AI with the API key and 'premium' tier for high-quality letters
+        response_text = make_ai_call(prompt, api_key=api_key, tier="premium")
         if not response_text:
             return fallback_letter()
 

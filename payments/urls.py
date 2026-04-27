@@ -13,4 +13,5 @@ urlpatterns = [
     path("v1/Checkout/Callback", csrf_exempt(views.azampay_callback), name="azampay_callback_v1"),
 
     path("webhook/", views.webhook_handler, name="webhook_handler"),
+    path("stripe-webhook/", views.stripe_webhook_handler, name="stripe_webhook_handler"),
 ]

@@ -1,5 +1,7 @@
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
 from django.db import models
+from django.conf import settings
+from django.utils import timezone
 
 class UserTBManager(BaseUserManager):
  
@@ -28,10 +30,17 @@ class UserTBManager(BaseUserManager):
 
 class UserTB(AbstractBaseUser, PermissionsMixin):
    
+    ROLE_CHOICES = [
+        ("customer", "Customer"),
+        ("agent", "Agent/Stationery"),
+        ("admin", "Admin"),
+    ]
+    
     email = models.EmailField(unique=True, verbose_name="Email Address")
     first_name = models.CharField(max_length=100, blank=True, null=True)
     middle_name = models.CharField(max_length=100, blank=True, null=True)
     last_name = models.CharField(max_length=100, blank=True, null=True)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="customer")
     is_active = models.BooleanField(default=False)  
     is_staff = models.BooleanField(default=False)  
     is_superuser = models.BooleanField(default=False)
@@ -48,6 +57,13 @@ class UserTB(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self) -> str:
         return self.email
+
+    @property
+    def credit_balance(self):
+        """Returns the number of downloads/credits remaining."""
+        if hasattr(self, 'credit'):
+            return self.credit.downloads_remaining
+        return 0
 
 # models.py, your UserTB model
     def get_full_name(self):
@@ -112,3 +128,51 @@ class UserTB(AbstractBaseUser, PermissionsMixin):
        
        
 """
+
+class AIUsage(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ai_usages"
+    )
+    date = models.DateField(default=timezone.now)
+    request_count = models.PositiveIntegerField(default=0)
+    last_request_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "date")
+        verbose_name = "AI Usage"
+        verbose_name_plural = "AI Usages"
+
+    def __str__(self):
+        return f"{self.user} - {self.date}: {self.request_count} requests"
+
+    @classmethod
+    def get_usage(cls, user):
+        usage, created = cls.objects.get_or_create(
+            user=user,
+            date=timezone.now().date()
+        )
+        return usage
+
+    def increment(self):
+        self.request_count += 1
+        self.save()
+
+class AICache(models.Model):
+    hash = models.CharField(max_length=64, unique=True, help_text="MD5 hash of input data")
+    doc_type = models.CharField(max_length=50)
+    original_content = models.JSONField()
+    polished_content = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "AI Cache"
+        verbose_name_plural = "AI Caches"
+
+    def __str__(self):
+        return f"Cache {self.hash[:8]} ({self.doc_type})"
+
+    @classmethod
+    def get_cached(cls, hash_val):
+        return cls.objects.filter(hash=hash_val).first()

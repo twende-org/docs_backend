@@ -4,6 +4,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 class Transaction(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions', null=True, blank=True)
     external_id = models.CharField(max_length=100, unique=True)
     transaction_id = models.CharField(max_length=100, blank=True, null=True)  # Added
     account_number = models.CharField(max_length=20, blank=True, null=True)

@@ -1,5 +1,5 @@
 import os
-import requests
+from api.services.ai_service import make_ai_call, extract_json_from_text, merge_dicts
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -25,8 +25,7 @@ FIELD_MAP = {
     5: ["requests", "closing_statement", "presenter_name", "presenter_title"]
 }
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+# Using centralized AI service (no hardcoded keys here)
 
 # -------------------------------------------------------
 # AI STEP-WISE GENERATION
@@ -62,28 +61,15 @@ class GenerateAIValuesAPIView(APIView):
             "- Andika mistari tofauti kwa kila field."
         )
 
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7
-        }
-
-        # Call API safely
+        # Call AI through centralized service (using 'standard' tier for step-wise gen)
         try:
-            response = requests.post(OPENROUTER_URL, json=data, headers=headers, timeout=30)
-            response.raise_for_status()
-            result = response.json()
+            response_text = make_ai_call(prompt, tier="standard")
+            if not response_text:
+                return Response({"error": "AI returned empty response"}, status=500)
         except Exception as e:
             return Response({"error": f"AI request failed: {str(e)}"}, status=500)
 
-        # Extract text
-        text_output = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-        if not text_output:
-            return Response({"error": "AI returned empty response"}, status=500)
+        text_output = response_text
 
         # Map lines → fields
         lines = [l.strip() for l in text_output.split("\n") if l.strip()]
@@ -108,8 +94,7 @@ class RisalaAPIView(APIView):
         # Fetch the risala for the logged-in user
         risala = Risala.objects.filter(user=request.user).order_by('-created_at').first()
         if not risala:
-            # If none exist, create a new one
-            risala = Risala.objects.create(user=request.user)
+            return Response({"error": "No Risala found for this user. Please create one first."}, status=404)
 
         serializer = RisalaSerializer(risala)
         raw_data = serializer.data
@@ -168,22 +153,11 @@ class RisalaAPIView(APIView):
             "Sasa andika RISALA KAMILI, NDEFU, YENYE UFAFANUZI NA MWENENDO WA HOTUBA."
         )
 
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.45,
-            "max_tokens": 1500
-        }
-
-        # Call AI
+        # Call AI through centralized service (using 'premium' tier for full Risala)
         try:
-            response = requests.post(OPENROUTER_URL, json=data, headers=headers, timeout=40)
-            response.raise_for_status()
-            risala_text = response.json()["choices"][0]["message"]["content"]
+            risala_text = make_ai_call(prompt, tier="premium", temperature=0.45, max_tokens=1500)
+            if not risala_text:
+                return Response({"error": "AI returned empty response"}, status=500)
         except Exception as e:
             return Response({"error": f"AI request failed: {str(e)}"}, status=500)
 

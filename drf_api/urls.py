@@ -19,7 +19,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', home),
     path('auth/', include('api.urls')),
-    path('sms/', include('smsparser.urls')),
     path('api/', include('personal_details.urls')),
     path('api/', include('work_experiences.urls')),
     path('api/', include('career_objective.urls')),
@@ -36,6 +35,8 @@ urlpatterns = [
     path('api/', include('project_report.urls')),
     path('api/', include('cv_app.urls')),
     path("api/", include("risala.urls")),
+    path("api/", include("documents.urls")),
+    path("api/ai/", include("api.ai_urls")),
     
     # Schema & docs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import UserTB
 from django.contrib.auth import authenticate
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from career_objective.models import CareerObjective
 from achivements_app.models import AchievementProfile, Achievement
@@ -13,6 +14,12 @@ from skills_app.models import SkillSet, SoftSkill, TechnicalSkill
 from work_experiences.models import WorkExperience, Responsibility
 from references_app.models import Reference
 from api.services.ai_service import enhance_cv_data
+from payments.models import UserCredit
+
+class UserCreditSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserCredit
+        fields = ['downloads_remaining', 'total_spent', 'updated_at']
 
 # ------------------- Nested Serializers -------------------
 
@@ -185,6 +192,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
             "projects": data.get("projects", []),
             "skill_sets": data.get("skill_sets", []),
             "languages": data.get("languages", []),
+            "role": instance.role,
             "references": [
                 {**r, "phone": format_phone(r.get("phone", ""))}
                 for r in data.get("references", [])
@@ -202,7 +210,7 @@ class UserTBSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserTB
-        fields = ["email", "first_name", "middle_name", "last_name", "password", "enhanced_data", "confirm_password"]
+        fields = ["email", "first_name", "middle_name", "last_name", "password", "enhanced_data", "confirm_password", "role"]
         extra_kwargs = {"password": {"write_only": True}}
 
     def validate_email(self, value):
@@ -222,7 +230,7 @@ class UserTBSerializer(serializers.ModelSerializer):
         user = UserTB(**validated_data)
         user.set_password(password)
         user.enhanced_data = enhanced_data
-        user.is_active = False
+        user.is_active = getattr(settings, "DEBUG", False)
         user.save()
         return user
 
@@ -250,10 +258,12 @@ class LoginSerializer(serializers.Serializer):
 # ------------------- User Profile Serializer -------------------
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    credit = UserCreditSerializer(source='user_credit', read_only=True)
+    
     class Meta:
         model = UserTB
-        fields = ["email", "first_name", "middle_name", "last_name", "is_active"]
-        read_only_fields = ["email", "is_active"]
+        fields = ["email", "first_name", "middle_name", "last_name", "is_active", "role", "credit"]
+        read_only_fields = ["email", "is_active", "role"]
 
 
 # ------------------- Password Reset Serializer -------------------

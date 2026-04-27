@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import RegisterView, VerifyEmailView, UserLoginView,LogoutView, UserProfileView,run_create_superuser,run_migrations,UserDetailView,AdminUserListView,GoogleAuthView
 from .password_reset import ForgotPasswordView,PasswordResetView
+# from .ai_views import AIPolishView
 from rest_framework_simplejwt.views import TokenRefreshView
 urlpatterns = [
     path("signup/", RegisterView.as_view(), name="signup"),
@@ -16,4 +17,5 @@ urlpatterns = [
     path("user-details/", UserDetailView.as_view(), name="user-details"),
     path("admin/users/", AdminUserListView.as_view(), name="admin-users"),
     path("google-auth/", GoogleAuthView.as_view(), name="google-auth"),
+    # path("ai/polish/", AIPolishView.as_view(), name="ai_polish"),
 ]
