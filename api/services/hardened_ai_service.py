@@ -28,6 +28,11 @@ class AIService:
             
             INPUT DATA:
             {json.dumps(data, indent=2)}
+
+            RESPONSE FORMAT:
+            You must respond with a JSON object containing the polished data. 
+            If the input is a complex object, return the object.
+            If the input is a single string, return: {{"polished_content": "Your polished string here"}}
             """
         
         # Default prompt for other documents
@@ -37,6 +42,10 @@ class AIService:
         
         INPUT DATA:
         {json.dumps(data, indent=2)}
+
+        RESPONSE FORMAT:
+        You must respond with a JSON object.
+        If polishing a single paragraph/string, return: {{"polished_content": "Your polished string here"}}
         """
 
     @classmethod
@@ -70,6 +79,11 @@ class AIService:
                     if user:
                         # 3. Track Usage
                         usage.increment()
+                    
+                    # If it's a direct string-to-string polish, it might be in 'polished_content' or the object itself
+                    if isinstance(cleaned_json, dict) and "polished_content" in cleaned_json:
+                        return {"success": True, "polished_content": cleaned_json["polished_content"]}
+                    
                     return {"success": True, "polished_content": cleaned_json}
             except Exception:
                 pass

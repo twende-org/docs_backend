@@ -387,3 +387,50 @@ class CVAIView(APIView):
             logger.exception("AI generation failed.")
             return Response({"error": "AI generation failed", "detail": str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class FactoryProfileImportView(APIView):
+    """
+    Returns the user's current legacy profile data formatted exactly 
+    for the frontend 'Document Factory' CV Editor.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        cv_details_view = UserCVDetailsView()
+        # Use existing extraction logic
+        raw_data = cv_details_view.get_user_cv_data(user)
+
+        # Transform to Factory structure (camelCase and specific nesting)
+        factory_data = {
+            "personalInfo": {
+                "fullName": raw_data.get("full_name", ""),
+                "jobTitle": raw_data.get("career_objective", "")[:100], # Fallback title
+                "email": raw_data.get("email", ""),
+                "phone": raw_data.get("phone", ""),
+                "address": raw_data.get("address", ""),
+            },
+            "summary": raw_data.get("profile_summary", ""),
+            "experience": [
+                {
+                    "id": str(i),
+                    "title": exp.get("job_title", ""),
+                    "company": exp.get("company", ""),
+                    "duration": f"{exp.get('start_date', '')} - {exp.get('end_date', 'Present')}",
+                    "description": "\n".join(exp.get("responsibilities", []))
+                }
+                for i, exp in enumerate(raw_data.get("work_experiences", []))
+            ],
+            "education": [
+                {
+                    "id": str(i),
+                    "degree": edu.get("degree", ""),
+                    "school": edu.get("institution", ""),
+                    "year": f"{edu.get('start_date', '')} - {edu.get('end_date', '')}"
+                }
+                for i, edu in enumerate(raw_data.get("educations", []))
+            ],
+            "skills": raw_data.get("technical_skills", []) + raw_data.get("soft_skills", [])
+        }
+
+        return Response(factory_data, status=status.HTTP_200_OK)
