@@ -16,6 +16,7 @@ urlpatterns = [
     path("run-migrations/", run_migrations),
     path("user-details/", UserDetailView.as_view(), name="user-details"),
     path("admin/users/", AdminUserListView.as_view(), name="admin-users"),
+    path("admin/users/<int:pk>/", AdminUserListView.as_view(), name="admin-user-detail"),
     path("google-auth/", GoogleAuthView.as_view(), name="google-auth"),
     # path("ai/polish/", AIPolishView.as_view(), name="ai_polish"),
 ]

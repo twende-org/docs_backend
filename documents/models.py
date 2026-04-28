@@ -29,4 +29,14 @@ class Document(models.Model):
         ordering = ['-updated_at']
 
     def __str__(self):
-        return f"{self.get_doc_type_display()}: {self.title} ({self.user.username})"
+        return f"{self.get_doc_type_display()}: {self.title} ({self.user.email})"
+
+class DocumentRequest(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='doc_requests')
+    doc_name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, default='PENDING', choices=[('PENDING', 'Pending'), ('DEVELOPING', 'Developing'), ('ADDED', 'Added')])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Request for {self.doc_name} by {self.user.email}"

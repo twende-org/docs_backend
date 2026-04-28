@@ -1,5 +1,5 @@
 from rest_framework import serializers, exceptions
-from .models import Document
+from .models import Document, DocumentRequest
 from .schemas import get_document_schema
 from payments.services import CreditService
 
@@ -56,3 +56,15 @@ class DocumentSerializer(serializers.ModelSerializer):
              CreditService.deduct_credit(user)
 
         return super().update(instance, validated_data)
+
+class DocumentRequestSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DocumentRequest
+        fields = ['id', 'user', 'user_email', 'user_name', 'doc_name', 'description', 'status', 'created_at']
+        read_only_fields = ['user', 'created_at']
+
+    def get_user_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.email

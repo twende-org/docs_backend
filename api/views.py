@@ -351,6 +351,27 @@ class AdminUserListView(APIView):
         users = UserTB.objects.all()  # Fetch all users
         serializer = UserDetailSerializer(users, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, pk=None):
+        try:
+            user = UserTB.objects.get(pk=pk)
+            user.is_active = not user.is_active
+            user.save()
+            return Response({
+                "message": f"User {user.email} status toggled.",
+                "is_active": user.is_active
+            }, status=status.HTTP_200_OK)
+        except UserTB.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, pk=None):
+        try:
+            user = UserTB.objects.get(pk=pk)
+            email = user.email
+            user.delete()
+            return Response({"message": f"User {email} deleted successfully."}, status=status.HTTP_200_OK)
+        except UserTB.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
     
 class GoogleAuthView(APIView):
     permission_classes = [AllowAny]

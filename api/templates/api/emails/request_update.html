@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background: #ffffff;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #1F2937 0%, #111827 100%);
+            color: #ffffff;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 900;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 50px;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 20px;
+        }
+        .status-pending { background-color: #FEF3C7; color: #92400E; }
+        .status-developing { background-color: #DBEAFE; color: #1E40AF; }
+        .status-added { background-color: #D1FAE5; color: #065F46; }
+        
+        .content {
+            padding: 40px;
+            line-height: 1.8;
+        }
+        .content h2 {
+            color: #1F2937;
+            margin-top: 0;
+            font-weight: 900;
+        }
+        .details-box {
+            background-color: #F9FAFB;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #F3F4F6;
+        }
+        .button-container {
+            text-align: center;
+            margin: 40px 0;
+        }
+        .button {
+            background-color: #B91C1C;
+            color: #ffffff !important;
+            padding: 18px 35px;
+            text-decoration: none;
+            border-radius: 15px;
+            font-weight: 900;
+            text-transform: uppercase;
+            font-size: 14px;
+            letter-spacing: 1px;
+            display: inline-block;
+            box-shadow: 0 4px 15px rgba(185, 28, 28, 0.3);
+        }
+        .footer {
+            background-color: #F9FAFB;
+            color: #9CA3AF;
+            padding: 30px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Update on Your Request</h1>
+            <div class="status-badge status-{{ status|lower }}">
+                Status: {{ status }}
+            </div>
+        </div>
+        <div class="content">
+            <h2>Hi {{ user.first_name }},</h2>
+            <p>We have an update regarding your document request on <strong>Twende Docs</strong>.</p>
+            
+            <div class="details-box">
+                <p style="margin: 0; font-weight: 800; color: #6B7280; font-size: 10px; text-transform: uppercase;">Requested Document</p>
+                <p style="margin: 5px 0 15px 0; font-size: 18px; font-weight: 900; color: #1F2937;">{{ doc_name }}</p>
+                
+                <p style="margin: 0; font-weight: 800; color: #6B7280; font-size: 10px; text-transform: uppercase;">Message from Team</p>
+                <p style="margin: 5px 0 0 0; color: #4B5563;">
+                    {% if status == 'PENDING' %}
+                        Your request has been received and is currently in our review queue.
+                    {% elif status == 'DEVELOPING' %}
+                        Good news! Our team is currently designing and building the template for your requested document.
+                    {% elif status == 'ADDED' %}
+                        Great news! The {{ doc_name }} template has been officially added to the platform and is now ready for use.
+                    {% endif %}
+                </p>
+            </div>
+            
+            <div class="button-container">
+                <a href="{{ platform_link }}" class="button">View on Platform</a>
+            </div>
+            
+            <p style="text-align: center; color: #9CA3AF; font-size: 13px;">Thank you for helping us grow. We appreciate your feedback!</p>
+            
+            <p style="font-weight: 800; color: #1F2937;">Best regards,<br>The Twende Docs Team</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 Twende Docs. All rights reserved.</p>
+            <p>Premium Document Architecture • Tanzania</p>
+        </div>
+    </div>
+</body>
+</html>
