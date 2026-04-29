@@ -17,6 +17,11 @@ class CreditService:
             return True
             
         credit, _ = UserCredit.objects.get_or_create(user=user)
+        
+        # Free Trial Bypass
+        if credit.is_in_trial:
+            return True
+            
         role = CreditService.get_user_role(user)
         
         if role == 'agent':
@@ -33,6 +38,11 @@ class CreditService:
             
         with transaction.atomic():
             credit = UserCredit.objects.select_for_update().get(user=user)
+            
+            # Skip deduction if in trial
+            if credit.is_in_trial:
+                return True
+                
             if credit.downloads_remaining <= 0:
                 return False
             credit.downloads_remaining -= 1

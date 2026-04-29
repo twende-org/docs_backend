@@ -20,6 +20,8 @@ import logging
 logger = logging.getLogger(__name__)  
 import io,os
 from payments.models import UserCredit
+from payments.services import CreditService
+
 from django.http import FileResponse
 from api.services.ai_service import make_ai_call, extract_json_from_text
 
@@ -178,11 +180,10 @@ class UserCVDetailsView(APIView):
         try:
             user = request.user
 
-            # Check download credits
-            credit, _ = UserCredit.objects.get_or_create(user=user)
-            if credit.downloads_remaining <= 0:
+            # Check download credits (using centralized service)
+            if not CreditService.has_sufficient_credits(user):
                 return Response(
-                    {"detail": "You have no download credits. Please purchase more to download CVs."},
+                    {"detail": "You have no download credits and your trial has expired. Please purchase more to download CVs."},
                     status=status.HTTP_402_PAYMENT_REQUIRED
                 )
 
@@ -219,9 +220,10 @@ class UserCVDetailsView(APIView):
             # Reset file pointer
             temp_file.seek(0)
 
-            # Deduct 1 download credit
-            credit.downloads_remaining -= 1
-            credit.save()
+            # Deduct credit (using centralized service)
+            if not CreditService.deduct_credit(user):
+                 # This should ideally not happen if has_sufficient_credits was True
+                 logger.error(f"Credit deduction failed for user {user.id} despite sufficient check.")
 
             # Return the file
             return FileResponse(
