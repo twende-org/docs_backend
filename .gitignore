@@ -39,3 +39,6 @@ staticfiles/
 # --- OS FILES ---
 .DS_Store
 Thumbs.db
+backup.sql
+certs/
+nginx/certbot/

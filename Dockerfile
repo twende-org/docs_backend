@@ -18,7 +18,6 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # Collect static files
-RUN python manage.py collectstatic --noinput
 
 # Copy and enable entrypoint
 COPY entrypoint.sh /app/entrypoint.sh
