@@ -51,8 +51,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         """
         document = self.get_object()
         from api.services.ai_service import AIService
+        language = request.data.get("language", "en")
         
-        result = AIService.polish_document(request.user, document.doc_type, document.content)
+        result = AIService.polish_document(request.user, document.doc_type, document.content, language)
         
         if result.get('success'):
             document.content = result['data']

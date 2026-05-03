@@ -10,6 +10,7 @@ class AIPolishView(APIView):
     def post(self, request):
         doc_type = request.data.get("type", "CV")
         data = request.data.get("data")
+        language = request.data.get("language", "en")
 
         if not data:
             return Response(
@@ -18,7 +19,7 @@ class AIPolishView(APIView):
             )
 
         # Call the hardened AI service
-        result = AIService.polish_document(request.user, doc_type, data)
+        result = AIService.polish_document(request.user, doc_type, data, language)
         
         if result.get("success"):
             return Response(result, status=status.HTTP_200_OK)

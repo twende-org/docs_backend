@@ -28,7 +28,7 @@ class AIService:
         return hashlib.md5(data_str.encode()).hexdigest()
 
     @classmethod
-    def polish_document(cls, user, doc_type, data):
+    def polish_document(cls, user, doc_type, data, language='en'):
         """
         Public method to polish document content with:
         - Usage tracking
@@ -53,7 +53,7 @@ class AIService:
             return {"success": True, "data": cached.polished_content, "cached": True}
 
         # 3. Build Prompt
-        prompt = cls._build_prompt(doc_type, data)
+        prompt = cls._build_prompt(doc_type, data, language)
         api_key = os.getenv("OPENROUTER_API_KEY") or getattr(settings, 'OPENROUTER_API_KEY', None)
 
         if not api_key:
@@ -89,13 +89,32 @@ class AIService:
         return {"success": False, "error": "AI failed to process. Returning original.", "data": data}
 
     @staticmethod
-    def _build_prompt(doc_type, data):
+    def _build_prompt(doc_type, data, language='en'):
         """High-impact prompt engineering for document polishing."""
+        lang_name = "Swahili" if language.startswith('sw') else "English"
+        
+        if doc_type.upper() == 'CV':
+            role = "senior executive career coach"
+            grade = "high-impact, professional career language with strong action verbs"
+        elif doc_type.upper() in ['AFFIDAVIT', 'CONTRACT']:
+            role = "legal drafting expert"
+            grade = "highly formal, official legal terminology suitable for government or court use"
+        elif doc_type.upper() in ['INVOICE', 'PROFORMA', 'QUOTATION']:
+            role = "business financial consultant"
+            grade = "concise, trustworthy business language that is professional and clear"
+        elif doc_type.upper() == 'LETTER':
+            role = "professional correspondence specialist"
+            grade = "respectful, formal business standard tone"
+        else:
+            role = "professional document consultant"
+            grade = "professional and clear standard language"
+
         return f"""
-        You are a senior professional document architect. Your task is to polish the following {doc_type} data for maximum impact.
+        You are a {role}. Your task is to polish the following {doc_type} data for maximum impact.
+        The output MUST BE in {lang_name}. Do NOT translate to another language.
         
         OBJECTIVES:
-        - Use professional, high-end business language.
+        - Use {grade}.
         - Enhance grammar, spelling, and structural flow.
         - Maintain 100% of the original meaning and factual details.
         

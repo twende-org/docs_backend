@@ -13,32 +13,55 @@ class AIService:
     """
     
     @staticmethod
-    def get_prompt_template(doc_type, data):
-        """Build professional prompts based on document type."""
-        if doc_type.upper() == 'CV':
-            return f"""
-            You are a senior executive career coach. Refactor the following CV data to be high-impact, professional, and clear.
-            
-            RULES:
-            - Use strong action verbs (e.g., "Spearheaded", "Architected", "Optimized").
-            - Remove filler words and passive language.
-            - Ensure a consistent tone suitable for international and Tanzanian job markets.
-            - Keep the core facts identical but improve the wording.
-            - Respond ONLY with valid JSON matching the input structure.
-            
-            INPUT DATA:
-            {json.dumps(data, indent=2)}
-
-            RESPONSE FORMAT:
-            You must respond with a JSON object containing the polished data. 
-            If the input is a complex object, return the object.
-            If the input is a single string, return: {{"polished_content": "Your polished string here"}}
-            """
+    def get_prompt_template(doc_type, data, language='en'):
+        """Build professional prompts based on document type and language."""
+        lang_name = "Swahili" if language.startswith('sw') else "English"
         
-        # Default prompt for other documents
+        if doc_type.upper() == 'CV':
+            role = "senior executive career coach"
+            objectives = [
+                "Use strong action verbs (e.g., 'Spearheaded', 'Architected', 'Optimized').",
+                "Remove filler words and passive language.",
+                "Ensure a consistent tone suitable for international and Tanzanian job markets."
+            ]
+        elif doc_type.upper() in ['AFFIDAVIT', 'CONTRACT']:
+            role = "legal drafting expert"
+            objectives = [
+                "Use highly formal, 'official' legal language suitable for court or government use.",
+                "Ensure maximum precision and clarity in every clause.",
+                f"Use standard {lang_name} legal terminology (e.g., 'Jamhuri ya Muungano' for TZ official docs)."
+            ]
+        elif doc_type.upper() in ['INVOICE', 'PROFORMA', 'QUOTATION']:
+            role = "business financial consultant"
+            objectives = [
+                "Ensure terms are concise, professional, and build trust.",
+                "Verify that descriptions are clear and easy for clients to understand.",
+                "Maintain a high level of business professionalism."
+            ]
+        elif doc_type.upper() == 'LETTER':
+            role = "professional correspondence specialist"
+            objectives = [
+                "Use a respectful, formal, and standard business tone.",
+                "Ensure the subject and body flow logically and professionally.",
+                "Maintain standard letter etiquette."
+            ]
+        else:
+            role = "professional document consultant"
+            objectives = [
+                "Polish the text to be more professional and clear.",
+                "Maintain all factual details and core meaning."
+            ]
+
+        rules_text = "\n            ".join([f"- {obj}" for obj in objectives])
+
         return f"""
-        You are a professional document consultant. Polish the following {doc_type} to be more professional and clear.
-        Maintain all factual details. Respond ONLY with valid JSON.
+        You are a {role}. Polish the following {doc_type} to be more professional and clear.
+        
+        RULES:
+        {rules_text}
+        - The output MUST BE in {lang_name}. Do NOT translate to another language.
+        - Maintain all factual details.
+        - Respond ONLY with valid JSON matching the input structure.
         
         INPUT DATA:
         {json.dumps(data, indent=2)}
@@ -49,7 +72,7 @@ class AIService:
         """
 
     @classmethod
-    def polish_document(cls, user, doc_type, data):
+    def polish_document(cls, user, doc_type, data, language='en'):
         """
         Public method to polish a document with usage tracking and retries.
         """
@@ -62,7 +85,7 @@ class AIService:
             # Internal or background enhancement: bypass limit
             pass
 
-        prompt = cls.get_prompt_template(doc_type, data)
+        prompt = cls.get_prompt_template(doc_type, data, language)
         api_key = os.getenv("OPENROUTER_API_KEY")
         
         if not api_key:

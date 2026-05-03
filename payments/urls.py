@@ -14,4 +14,8 @@ urlpatterns = [
 
     path("webhook/", views.webhook_handler, name="webhook_handler"),
     path("stripe-webhook/", views.stripe_webhook_handler, name="stripe_webhook_handler"),
+    
+    # SNIPPE
+    path("snippe/initiate/", views.snippe_initiate_payment, name="snippe_initiate_payment"),
+    path("snippe/webhook/", views.snippe_webhook, name="snippe_webhook"),
 ]

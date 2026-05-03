@@ -6,7 +6,7 @@ from payments.services import CreditService
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
-        fields = ['id', 'user', 'doc_type', 'title', 'customer_name', 'customer_phone', 'content', 'status', 'is_polished', 'created_at', 'updated_at']
+        fields = ['id', 'user', 'doc_type', 'title', 'customer_name', 'customer_phone', 'content', 'settings', 'status', 'is_polished', 'created_at', 'updated_at']
         read_only_fields = ['user', 'is_polished', 'created_at', 'updated_at']
 
     def validate_content(self, value):

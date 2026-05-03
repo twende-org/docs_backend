@@ -20,6 +20,7 @@ class Document(models.Model):
     customer_name = models.CharField(max_length=255, blank=True, null=True, help_text="For agents creating docs for others")
     customer_phone = models.CharField(max_length=20, blank=True, null=True)
     content = models.JSONField(help_text="Flexible JSON storage for all document fields")
+    settings = models.JSONField(default=dict, help_text="Stores themes, layouts, and other visual settings")
     status = models.CharField(max_length=20, default='DRAFT', choices=[('DRAFT', 'Draft'), ('FINAL', 'Final')])
     is_polished = models.BooleanField(default=False, help_text="Checked if AI has optimized the content")
     created_at = models.DateTimeField(auto_now_add=True)

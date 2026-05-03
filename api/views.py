@@ -465,3 +465,18 @@ class GoogleAuthView(APIView):
 
    
    
+class PublicStatsView(APIView):
+    """
+    Publicly accessible statistics for the landing page social proof.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from documents.models import Document, DocumentRequest
+        
+        return Response({
+            "users": UserTB.objects.count(),
+            "documents": Document.objects.count(),
+            "agents": UserTB.objects.filter(role='seller').count(),
+            "requests": DocumentRequest.objects.count()
+        }, status=status.HTTP_200_OK)

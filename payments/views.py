@@ -4,7 +4,7 @@ import requests
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import Transaction, UserCredit
-from .services import CreditService
+from .services import CreditService, SnippeService
 from django.contrib.auth import get_user_model
 import hmac
 import hashlib
@@ -127,7 +127,112 @@ def create_checkout(request):
         "data": response_data.get("data", {}),
     }, status=status_code)
 
+# ---------------------------------------------------
+# SNIPPE INTEGRATION
+# ---------------------------------------------------
+@csrf_exempt
+def snippe_initiate_payment(request):
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "Invalid method"}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        amount = data.get("amount")
+        payment_type = data.get("type") # 'mobile', 'card', 'dynamic-qr'
+        phone_number = data.get("phone")
+        
+        if not amount or not payment_type:
+            return JsonResponse({"status": "error", "message": "Missing amount or type"}, status=400)
 
+        # Prepare customer data from request or user profile
+        user = request.user
+        customer_data = {
+            "first_name": getattr(user, 'first_name', 'Customer'),
+            "last_name": getattr(user, 'last_name', 'User'),
+            "email": getattr(user, 'email', data.get("email", "")),
+            "address": data.get("address", "N/A"),
+            "city": data.get("city", "DSM"),
+            "state": data.get("state", "DSM"),
+            "postcode": data.get("postcode", "00000"),
+            "country": data.get("country", "TZ")
+        }
+        
+        metadata = {
+            "user_id": str(user.id) if user.is_authenticated else None,
+            "plan_name": data.get("plan_name", "Credits Purchase")
+        }
+
+        response = SnippeService.initiate_payment(
+            amount=amount,
+            payment_type=payment_type,
+            customer_data=customer_data,
+            phone_number=phone_number,
+            metadata=metadata
+        )
+
+        if response.get("status") == "success":
+            snippe_data = response.get("data", {})
+            reference = snippe_data.get("reference")
+            
+            # Create transaction record using the Snippe reference as external_id
+            Transaction.objects.create(
+                user=user if user.is_authenticated else None,
+                external_id=reference,
+                transaction_id=snippe_data.get("id", ""), # if any
+                amount=amount,
+                status="PENDING",
+                provider="SNIPPE",
+                raw_checkout=response
+            )
+            
+            return JsonResponse(response)
+        else:
+            return JsonResponse(response, status=400)
+
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+@csrf_exempt
+def snippe_webhook(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid method"}, status=405)
+    
+    payload = request.body
+    signature = request.headers.get("X-Snippe-Signature")
+    
+    if not SnippeService.verify_webhook(payload, signature):
+        return JsonResponse({"error": "Invalid signature"}, status=403)
+
+    try:
+        data = json.loads(payload)
+        event_type = data.get("event")
+        payment_data = data.get("data", {})
+        
+        # Based on documentation, event is 'payment.completed'
+        if event_type == "payment.completed":
+            reference = payment_data.get("reference")
+            amount_obj = payment_data.get("amount", {})
+            amount_value = amount_obj.get("value")
+            metadata = payment_data.get("metadata", {})
+            user_id = metadata.get("user_id")
+            
+            with transaction.atomic():
+                tx = Transaction.objects.filter(external_id=reference).first()
+                if tx and tx.status != "SUCCESS":
+                    tx.status = "SUCCESS"
+                    tx.raw_webhook = data
+                    tx.save()
+                    
+                    if user_id:
+                        user = get_user_model().objects.get(id=user_id)
+                        CreditService.add_credits(user, float(amount_value))
+                        
+            return JsonResponse({"status": "success"})
+            
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"status": "ignored"})
 
 
 def update_user_credits(user, amount):

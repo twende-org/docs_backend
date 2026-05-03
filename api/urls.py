@@ -1,8 +1,13 @@
 from django.urls import path
-from .views import RegisterView, VerifyEmailView, UserLoginView,LogoutView, UserProfileView,run_create_superuser,run_migrations,UserDetailView,AdminUserListView,GoogleAuthView
-from .password_reset import ForgotPasswordView,PasswordResetView
+from .views import (
+    RegisterView, VerifyEmailView, UserLoginView, LogoutView, 
+    UserProfileView, run_create_superuser, run_migrations, 
+    UserDetailView, AdminUserListView, GoogleAuthView, PublicStatsView
+)
+from .password_reset import ForgotPasswordView, PasswordResetView
 # from .ai_views import AIPolishView
 from rest_framework_simplejwt.views import TokenRefreshView
+
 urlpatterns = [
     path("signup/", RegisterView.as_view(), name="signup"),
     path("verify-email/", VerifyEmailView.as_view(), name="verify-email"),
@@ -18,5 +23,6 @@ urlpatterns = [
     path("admin/users/", AdminUserListView.as_view(), name="admin-users"),
     path("admin/users/<int:pk>/", AdminUserListView.as_view(), name="admin-user-detail"),
     path("google-auth/", GoogleAuthView.as_view(), name="google-auth"),
+    path("public-stats/", PublicStatsView.as_view(), name="public-stats"),
     # path("ai/polish/", AIPolishView.as_view(), name="ai_polish"),
 ]
