@@ -2,7 +2,7 @@ import json
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import Document, DocumentRequest
 from .serializers import DocumentSerializer, DocumentRequestSerializer
 from api.services.ai_service import make_ai_call, extract_json_from_text
@@ -19,6 +19,21 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if self.request.user.is_authenticated:
             return Document.objects.filter(user=self.request.user)
         return Document.objects.none()
+
+    @action(detail=True, methods=['get'], permission_classes=[AllowAny])
+    def public(self, request, pk=None):
+        """
+        Publicly accessible view for a specific document.
+        """
+        try:
+            document = Document.objects.get(pk=pk)
+            # You might want to restrict this to 'FINAL' documents only
+            # if document.status != 'FINAL':
+            #     return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+            return Response(DocumentSerializer(document).data)
+        except Document.DoesNotExist:
+            return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
 
     def perform_create(self, serializer):
         # Validate that if the user is an agent, they have at least 1 credit
