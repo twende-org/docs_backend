@@ -14,11 +14,9 @@ class AIService:
     Focuses on reliability, cost-optimization, and scalability.
     """
     
-    # Model preferences in order of cascading fallback
     MODELS = [
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "google/gemini-2.5-flash",
         "meta-llama/llama-3.3-70b-instruct",
-        "mistralai/mistral-7b-instruct",
     ]
 
     @staticmethod

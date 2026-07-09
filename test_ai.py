@@ -8,7 +8,7 @@ django.setup()
 from api.services.ai_service import make_ai_call
 
 print("Testing AI call...")
-result = make_ai_call("Hello, say 'AI is working' if you can hear me.", tier="premium")
+result = make_ai_call("Hello, say 'AI is working' if you can hear me.")
 if result:
     print(f"SUCCESS: {result}")
 else:
