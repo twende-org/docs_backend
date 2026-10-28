@@ -13,5 +13,11 @@ if [ "${RUN_MIGRATIONS:-0}" = "1" ]; then
   python manage.py collectstatic --noinput
 fi
 
+# One-off containers (migrate, collectstatic, shell) pass their own command;
+# only fall through to gunicorn when the image is started with no arguments.
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
 echo "Starting Gunicorn..."
 exec gunicorn -c gunicorn_config.py drf_api.wsgi:application
