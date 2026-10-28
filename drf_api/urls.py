@@ -15,6 +15,9 @@ from drf_spectacular.views import (
 )
 
 urlpatterns = [
+    # Liveness probe for Traefik and the container healthcheck; no DB access.
+    path('healthz/', lambda request: JsonResponse({'status': 'ok'}), name='healthz'),
+
     path('grappelli/', include('grappelli.urls')),
     path('admin/', admin.site.urls),
     path('', home),
